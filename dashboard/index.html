@@ -89,20 +89,6 @@
   </div>
 
   <!-- ================================================================
-       MOST VISITED — top 8 domains from Chrome history
-       Shown in static default view only. Hidden once AI view is active.
-       app.js populates this from /api/stats topSites field.
-       ================================================================ -->
-  <div class="top-sites-section" id="topSitesSection" style="display:none">
-    <div class="section-header">
-      <h2>Most visited</h2>
-      <div class="section-line"></div>
-    </div>
-    <!-- Domain tiles injected by renderStaticDashboard() in app.js -->
-    <div class="top-sites-grid" id="topSitesGrid"></div>
-  </div>
-
-  <!-- ================================================================
        ORGANIZE WITH AI BUTTON — shown in static default view
        Sits between the domain groups and header area.
        Clicking this triggers DeepSeek clustering (renderAIDashboard).
@@ -168,10 +154,6 @@
     </div>
 
   </div><!-- end .dashboard-columns -->
-
-  <!-- NOTE: The "Pick back up" / history section has been removed.
-       The /api/history-missions endpoint still exists on the server
-       but is no longer called from the frontend. -->
 
   <!-- ================================================================
        FOOTER — global stats + refresh control

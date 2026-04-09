@@ -41,29 +41,13 @@ const {
   searchDeferredArchived,
 } = require('./db');
 
-// Pull in the AI clustering functions
-// analyzeBrowsingHistory() — reads Chrome history and creates missions for the DB
-// clusterOpenTabs()        — clusters currently open tabs ephemerally (no DB)
-const { analyzeBrowsingHistory, clusterOpenTabs } = require('./clustering');
-
-// Pull in the history reader — we reuse its DB-reading pattern to query top sites
-const { readRecentHistory } = require('./history-reader');
+// Pull in the AI clustering function for live open tabs
+// clusterOpenTabs() — clusters currently open tabs ephemerally (no DB)
+const { clusterOpenTabs } = require('./clustering');
 
 // An Express Router is like a mini-app: it holds a group of related routes.
 // We export it and mount it on the main Express app in index.js.
 const router = express.Router();
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Refresh lock
-//
-// analyzeBrowsingHistory() can take 5-30 seconds (it calls an AI API).
-// If the user clicks "Refresh" twice quickly, we don't want two simultaneous
-// AI calls running at once — that would waste money and could corrupt the DB.
-//
-// This flag works like a "busy" sign on a bathroom door. If it's already
-// flipped to true, new refresh requests get a 429 (Too Many Requests) response.
-// ─────────────────────────────────────────────────────────────────────────────
-let isRefreshing = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/missions
@@ -106,49 +90,6 @@ router.get('/missions', (req, res) => {
   } catch (err) {
     console.error('[routes] GET /missions failed:', err.message);
     res.status(500).json({ error: 'Failed to fetch missions' });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/missions/refresh
-//
-// Triggers a fresh analysis of the user's Chrome browsing history.
-// This calls LLM AI and can take several seconds.
-//
-// Concurrency protection: if a refresh is already running (isRefreshing = true),
-// we return HTTP 429 (Too Many Requests) immediately.
-//
-// Response: { success: true, count: <number of missions created> }
-// ─────────────────────────────────────────────────────────────────────────────
-router.post('/missions/refresh', async (req, res) => {
-  // ── Concurrency guard ──────────────────────────────────────────────────────
-  if (isRefreshing) {
-    return res.status(429).json({
-      error: 'A refresh is already in progress. Please wait.',
-    });
-  }
-
-  // Flip the busy flag on before doing any async work
-  isRefreshing = true;
-
-  try {
-    // Run the full analysis pipeline:
-    //   1. Read Chrome history
-    //   2. Filter + deduplicate URLs
-    //   3. Call LLM AI to cluster into missions
-    //   4. Save missions + URLs to the SQLite database
-    // Returns the array of mission objects that were saved
-    const missions = await analyzeBrowsingHistory();
-
-    res.json({ success: true, count: missions.length });
-  } catch (err) {
-    console.error('[routes] POST /missions/refresh failed:', err.message);
-    res.status(500).json({ error: 'Refresh failed: ' + err.message });
-  } finally {
-    // Always flip the busy flag back off, even if an error occurred.
-    // Without `finally`, a crash would leave isRefreshing = true forever,
-    // blocking all future refreshes until the server restarts.
-    isRefreshing = false;
   }
 });
 
@@ -236,7 +177,7 @@ router.post('/missions/:id/archive', (req, res) => {
 // GET /api/stats
 //
 // Returns summary statistics about the current state of missions.
-// Used by the dashboard header to show things like "14 missions, 3 abandoned".
+// Used by the dashboard footer to show things like open tab count.
 //
 // Response:
 //   {
@@ -280,90 +221,11 @@ router.get('/stats', (req, res) => {
     const metaRow = getMeta.get({ key: 'last_analysis' });
     const lastAnalysis = metaRow ? metaRow.value : null;
 
-    // ── Top sites: 8 most-visited domains from Chrome history ─────────────────
-    // We reuse the same "copy to temp, read readonly" pattern from history-reader.
-    // This gives us a real-time snapshot of the user's most visited domains
-    // without requiring any stored data in our own database.
-    let topSites = [];
-    try {
-      const fs       = require('fs');
-      const path     = require('path');
-      const os       = require('os');
-      const Database = require('better-sqlite3');
-
-      const CHROME_HISTORY_PATH = path.join(
-        os.homedir(),
-        'Library', 'Application Support', 'Google', 'Chrome', 'Default', 'History'
-      );
-      const TEMP_COPY_PATH = path.join(os.tmpdir(), 'mission-control-topsites-copy.db');
-
-      if (fs.existsSync(CHROME_HISTORY_PATH)) {
-        // Copy to temp to avoid Chrome's file lock
-        fs.copyFileSync(CHROME_HISTORY_PATH, TEMP_COPY_PATH);
-
-        let histDb = null;
-        try {
-          histDb = new Database(TEMP_COPY_PATH, { readonly: true, fileMustExist: true });
-
-          // Pull URLs visited in the last 7 days, counted by visits table
-          // Chrome timestamps = microseconds since Jan 1 1601
-          const CHROME_EPOCH_OFFSET = 11644473600;
-          const sevenDaysAgo = (Math.floor(Date.now() / 1000) + CHROME_EPOCH_OFFSET - 7 * 86400) * 1000000;
-
-          const rows = histDb.prepare(`
-            SELECT u.url, u.title, COUNT(v.id) as visit_count
-            FROM visits v
-            JOIN urls u ON v.url = u.id
-            WHERE v.visit_time > ?
-            GROUP BY u.url
-            ORDER BY visit_count DESC
-            LIMIT 500
-          `).all(sevenDaysAgo);
-
-          // Aggregate visit counts by hostname (domain)
-          const domainMap = {};
-          for (const row of rows) {
-            try {
-              const hostname = new URL(row.url).hostname;
-              // Skip empty, chrome-internal, or extension pages
-              if (!hostname || hostname.startsWith('chrome') || hostname === 'localhost') continue;
-
-              if (!domainMap[hostname]) {
-                domainMap[hostname] = { domain: hostname, visitCount: 0, title: '' };
-              }
-              domainMap[hostname].visitCount += row.visit_count;
-              // Use the title from the highest-visit-count entry for this domain
-              if (!domainMap[hostname].title && row.title) {
-                domainMap[hostname].title = row.title;
-              }
-            } catch {
-              // Skip malformed URLs
-            }
-          }
-
-          // Sort by visit count descending, take top 8
-          topSites = Object.values(domainMap)
-            .sort((a, b) => b.visitCount - a.visitCount)
-            .slice(0, 8);
-
-        } finally {
-          if (histDb) {
-            try { histDb.close(); } catch { /* ignore */ }
-          }
-          try { fs.unlinkSync(TEMP_COPY_PATH); } catch { /* ignore */ }
-        }
-      }
-    } catch (topSitesErr) {
-      // Top sites is best-effort — don't fail the whole stats endpoint
-      console.warn('[routes] GET /stats: could not read top sites:', topSitesErr.message);
-    }
-
     res.json({
       totalMissions,
       totalUrls,
       abandonedMissions,
       lastAnalysis,
-      topSites,
     });
   } catch (err) {
     console.error('[routes] GET /stats failed:', err.message);
@@ -480,82 +342,6 @@ router.post('/cluster-tabs', async (req, res) => {
   } catch (err) {
     console.error('[routes] POST /cluster-tabs failed:', err.message);
     res.status(500).json({ error: 'Failed to cluster tabs: ' + err.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/history-missions
-//
-// NEW endpoint for the "Pick back up" section.
-//
-// Returns missions from the SQLite database (history-based ones created by
-// analyzeBrowsingHistory()), but ONLY those where NONE of the mission's URLs
-// match any currently open tab URL. This prevents showing a mission in both
-// "Right now" AND "Pick back up" at the same time.
-//
-// Query param: ?openUrls=https://example.com,https://other.com (comma-separated)
-// The dashboard passes the URLs of all currently open tabs so we can filter.
-//
-// Response: same shape as GET /api/missions (array of mission objects with urls)
-// ─────────────────────────────────────────────────────────────────────────────
-router.get('/history-missions', (req, res) => {
-  try {
-    // Parse the comma-separated openUrls query param into a Set for fast lookups.
-    // A Set is like a list but with super-fast "does this exist?" checks.
-    const rawOpenUrls = req.query.openUrls || '';
-    const openUrlSet = new Set(
-      rawOpenUrls
-        .split(',')
-        .map(u => u.trim())
-        .filter(Boolean)
-    );
-
-    // Fetch all non-dismissed missions from the database
-    const allMissions = getMissions.all();
-
-    // For each mission, attach its URLs — then filter out any mission whose
-    // URLs overlap with the currently open tabs.
-    const historyMissions = allMissions
-      .map(mission => ({
-        ...mission,
-        urls: getMissionUrls.all({ id: mission.id }),
-      }))
-      .filter(mission => {
-        // Keep this mission ONLY if none of its URLs are currently open.
-        // "Currently open" is checked by exact URL match and by domain match,
-        // since open tabs and history URLs might differ slightly in path/params.
-        const hasOpenTab = mission.urls.some(urlRow => {
-          const missionUrl = urlRow.url || '';
-
-          // First: exact URL match
-          if (openUrlSet.has(missionUrl)) return true;
-
-          // Second: domain match — if any open tab is from the same hostname,
-          // consider this mission as "currently active" and exclude it from history.
-          try {
-            const missionHostname = new URL(missionUrl).hostname;
-            for (const openUrl of openUrlSet) {
-              try {
-                const openHostname = new URL(openUrl).hostname;
-                if (openHostname === missionHostname) return true;
-              } catch { /* skip malformed URLs */ }
-            }
-          } catch { /* skip malformed mission URLs */ }
-
-          return false;
-        });
-
-        // hasOpenTab = true means the mission IS open right now → exclude it
-        return !hasOpenTab;
-      });
-
-    // Return at most 5 history missions (the "Pick back up" section is secondary)
-    const limited = historyMissions.slice(0, 5);
-
-    res.json(limited);
-  } catch (err) {
-    console.error('[routes] GET /history-missions failed:', err.message);
-    res.status(500).json({ error: 'Failed to fetch history missions' });
   }
 });
 

@@ -25,15 +25,6 @@ const DEFAULTS = {
   // Which local port the web server listens on.
   port: 3456,
 
-  // How often (in minutes) the server re-reads Chrome history and re-clusters.
-  refreshIntervalMinutes: 30,
-
-  // How many history entries to pull per refresh batch.
-  batchSize: 200,
-
-  // How many days back to look in Chrome's browsing history.
-  historyDays: 7,
-
   // ── LLM Provider Settings ──
   // Works with ANY OpenAI-compatible API: DeepSeek, OpenAI, Groq, Together,
   // Ollama (local), OpenRouter, Anthropic (via proxy), etc.

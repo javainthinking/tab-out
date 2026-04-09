@@ -28,7 +28,6 @@ The agent will explain what Tab Out does, walk you through choosing an LLM provi
 - **Close tabs with style** — swoosh sound + confetti burst when you clean up a mission. Makes tab hygiene feel rewarding
 - **Duplicate detection** — flags when you have the same page open twice, with one-click cleanup
 - **Click any tab to jump to it** — no new tab opened, just switches to the existing one
-- **Most visited sites** — your top sites from the past week, right on the new tab page
 - **Custom grouping rules** — teach the AI your preferences in plain English
 - **Works with any LLM** — DeepSeek, OpenAI, Grok, Gemini, Claude (via OpenRouter), Kimi, GLM, ByteDance Seed, Minimax, Ollama, or any OpenAI-compatible API
 - **Auto-updates** — get notified when a new version is available, update with one click
@@ -117,8 +116,6 @@ Config lives at `~/.mission-control/config.json`:
 | `model` | `deepseek-chat` | Which model to use (pick something cheap/fast) |
 | `customPromptRules` | *(empty)* | Your custom tab grouping instructions |
 | `port` | `3456` | Local port for the dashboard |
-| `batchSize` | `200` | How many history entries to process |
-| `historyDays` | `7` | How far back to look for most-visited sites |
 
 ---
 

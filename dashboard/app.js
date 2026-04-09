@@ -446,6 +446,272 @@ function getOpenTabsForMission(missionUrls) {
    without writing raw SVG every time. Each value is an HTML string
    ready to be injected with innerHTML.
    ---------------------------------------------------------------- */
+/* ----------------------------------------------------------------
+   DOMAIN & TITLE CLEANUP HELPERS
+
+   Make domain names and tab titles more readable without any AI.
+   - friendlyDomain() turns "github.com" into "GitHub"
+   - cleanTitle() strips redundant site names from the end of titles
+   ---------------------------------------------------------------- */
+
+// Map of known domains → friendly display names.
+// Covers the most common sites; everything else gets a smart fallback.
+const FRIENDLY_DOMAINS = {
+  'github.com':           'GitHub',
+  'www.github.com':       'GitHub',
+  'gist.github.com':      'GitHub Gist',
+  'youtube.com':          'YouTube',
+  'www.youtube.com':      'YouTube',
+  'music.youtube.com':    'YouTube Music',
+  'x.com':                'X',
+  'www.x.com':            'X',
+  'twitter.com':          'X',
+  'www.twitter.com':      'X',
+  'reddit.com':           'Reddit',
+  'www.reddit.com':       'Reddit',
+  'old.reddit.com':       'Reddit',
+  'substack.com':         'Substack',
+  'www.substack.com':     'Substack',
+  'medium.com':           'Medium',
+  'www.medium.com':       'Medium',
+  'linkedin.com':         'LinkedIn',
+  'www.linkedin.com':     'LinkedIn',
+  'stackoverflow.com':    'Stack Overflow',
+  'www.stackoverflow.com':'Stack Overflow',
+  'news.ycombinator.com': 'Hacker News',
+  'google.com':           'Google',
+  'www.google.com':       'Google',
+  'mail.google.com':      'Gmail',
+  'docs.google.com':      'Google Docs',
+  'drive.google.com':     'Google Drive',
+  'calendar.google.com':  'Google Calendar',
+  'meet.google.com':      'Google Meet',
+  'gemini.google.com':    'Gemini',
+  'chatgpt.com':          'ChatGPT',
+  'www.chatgpt.com':      'ChatGPT',
+  'chat.openai.com':      'ChatGPT',
+  'claude.ai':            'Claude',
+  'www.claude.ai':        'Claude',
+  'code.claude.com':      'Claude Code',
+  'notion.so':            'Notion',
+  'www.notion.so':        'Notion',
+  'figma.com':            'Figma',
+  'www.figma.com':        'Figma',
+  'slack.com':            'Slack',
+  'app.slack.com':        'Slack',
+  'discord.com':          'Discord',
+  'www.discord.com':      'Discord',
+  'wikipedia.org':        'Wikipedia',
+  'en.wikipedia.org':     'Wikipedia',
+  'amazon.com':           'Amazon',
+  'www.amazon.com':       'Amazon',
+  'netflix.com':          'Netflix',
+  'www.netflix.com':      'Netflix',
+  'spotify.com':          'Spotify',
+  'open.spotify.com':     'Spotify',
+  'vercel.com':           'Vercel',
+  'www.vercel.com':       'Vercel',
+  'npmjs.com':            'npm',
+  'www.npmjs.com':        'npm',
+  'developer.mozilla.org':'MDN',
+  'arxiv.org':            'arXiv',
+  'www.arxiv.org':        'arXiv',
+  'huggingface.co':       'Hugging Face',
+  'www.huggingface.co':   'Hugging Face',
+  'producthunt.com':      'Product Hunt',
+  'www.producthunt.com':  'Product Hunt',
+  'xiaohongshu.com':      'RedNote',
+  'www.xiaohongshu.com':  'RedNote',
+  'local-files':          'Local Files',
+};
+
+/**
+ * friendlyDomain(hostname)
+ *
+ * Turns a raw hostname into a human-readable name.
+ * 1. Check the lookup map for known domains
+ * 2. For subdomains of known domains, check if the parent matches
+ *    (e.g. "docs.github.com" → "GitHub Docs")
+ * 3. Fallback: strip "www.", strip TLD, capitalize
+ *    (e.g. "minttr.com" → "Minttr", "blog.example.co.uk" → "Blog Example")
+ */
+function friendlyDomain(hostname) {
+  if (!hostname) return '';
+
+  // Direct lookup
+  if (FRIENDLY_DOMAINS[hostname]) return FRIENDLY_DOMAINS[hostname];
+
+  // Check for *.substack.com pattern (e.g. "lenny.substack.com" → "Lenny's Substack")
+  if (hostname.endsWith('.substack.com') && hostname !== 'substack.com') {
+    const sub = hostname.replace('.substack.com', '');
+    return capitalize(sub) + "'s Substack";
+  }
+
+  // Check for *.github.io pattern
+  if (hostname.endsWith('.github.io')) {
+    const sub = hostname.replace('.github.io', '');
+    return capitalize(sub) + ' (GitHub Pages)';
+  }
+
+  // Fallback: strip www, strip common TLDs, capitalize each word
+  let clean = hostname
+    .replace(/^www\./, '')
+    .replace(/\.(com|org|net|io|co|ai|dev|app|so|me|xyz|info|us|uk|co\.uk|co\.jp)$/, '');
+
+  // If it's a subdomain like "blog.example", keep it readable
+  return clean
+    .split('.')
+    .map(part => capitalize(part))
+    .join(' ');
+}
+
+/**
+ * capitalize(str)
+ * "github" → "GitHub" (okay, just "Github" — but close enough for fallback)
+ */
+function capitalize(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/**
+ * stripTitleNoise(title)
+ *
+ * Removes common noise from browser tab titles:
+ * - Leading notification counts: "(2) Vibe coding ideas" → "Vibe coding ideas"
+ * - Trailing email addresses: "Subject - user@gmail.com" → "Subject"
+ * - X/Twitter cruft: "Name on X: \"quote\" / X" → "Name: \"quote\""
+ * - Trailing "/ X" or "| LinkedIn" etc (handled by cleanTitle, but the
+ *   "on X:" pattern needs special handling here)
+ */
+function stripTitleNoise(title) {
+  if (!title) return '';
+
+  // 1. Strip leading notification count: "(2) Title" or "(99+) Title"
+  title = title.replace(/^\(\d+\+?\)\s*/, '');
+
+  // 2. Strip trailing email address: "Subject - user@example.com"
+  //    Handles any separator (hyphen, en dash, em dash, or Unicode dashes)
+  //    before an email. Also catches " - email" with no separator detected.
+  title = title.replace(/\s*[\-\u2010\u2011\u2012\u2013\u2014\u2015]\s*[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\s*$/, '');
+  // Fallback: if there's still an email at the end with any whitespace/separator before it
+  title = title.replace(/\s+[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\s*$/, '');
+
+  // 3. Clean up X/Twitter title format: "Name on X: \"quote text\"" → "Name: \"quote text\""
+  title = title.replace(/\s+on X:\s*/, ': ');
+
+  // 4. Strip trailing "/ X" (X/Twitter appends this)
+  title = title.replace(/\s*\/\s*X\s*$/, '');
+
+  return title.trim();
+}
+
+/**
+ * cleanTitle(title, hostname)
+ *
+ * Strips redundant site name suffixes from tab titles.
+ * Many sites append their name: "Article Title - Medium" or "Post | Reddit"
+ * If the suffix matches the domain, we remove it for a cleaner look.
+ */
+function cleanTitle(title, hostname) {
+  if (!title || !hostname) return title || '';
+
+  const friendly = friendlyDomain(hostname);
+  const domain = hostname.replace(/^www\./, '');
+
+  // Common separator patterns at the end of titles
+  // "Article Title - Site Name", "Article Title | Site Name", "Article Title — Site Name"
+  const separators = [' - ', ' | ', ' — ', ' · ', ' – '];
+
+  for (const sep of separators) {
+    const idx = title.lastIndexOf(sep);
+    if (idx === -1) continue;
+
+    const suffix = title.slice(idx + sep.length).trim();
+    const suffixLower = suffix.toLowerCase();
+
+    // Check if the suffix matches the domain name, friendly name, or common variations
+    if (
+      suffixLower === domain.toLowerCase() ||
+      suffixLower === friendly.toLowerCase() ||
+      suffixLower === domain.replace(/\.\w+$/, '').toLowerCase() || // "github" from "github.com"
+      domain.toLowerCase().includes(suffixLower) ||
+      friendly.toLowerCase().includes(suffixLower)
+    ) {
+      const cleaned = title.slice(0, idx).trim();
+      // Only strip if we're left with something meaningful (at least 5 chars)
+      if (cleaned.length >= 5) return cleaned;
+    }
+  }
+
+  return title;
+}
+
+/**
+ * smartTitle(title, url)
+ *
+ * When the tab title is useless (just the URL, or a generic site name),
+ * try to extract something meaningful from the URL itself.
+ * Works for X/Twitter posts, GitHub repos, YouTube videos, Reddit threads, etc.
+ */
+function smartTitle(title, url) {
+  if (!url) return title || '';
+
+  let pathname = '';
+  let hostname = '';
+  try {
+    const u = new URL(url);
+    pathname = u.pathname;
+    hostname = u.hostname;
+  } catch {
+    return title || '';
+  }
+
+  // Check if the title is basically just the URL (useless)
+  const titleIsUrl = !title || title === url || title.startsWith(hostname) || title.startsWith('http');
+
+  // X / Twitter — extract @username from /username/status/123456 URLs
+  if ((hostname === 'x.com' || hostname === 'twitter.com' || hostname === 'www.x.com') && pathname.includes('/status/')) {
+    const username = pathname.split('/')[1];
+    if (username) {
+      // If the title has actual content (not just URL), clean it and keep it
+      if (!titleIsUrl) return title;
+      return `Post by @${username}`;
+    }
+  }
+
+  // GitHub — extract owner/repo or owner/repo/path context
+  if (hostname === 'github.com' || hostname === 'www.github.com') {
+    const parts = pathname.split('/').filter(Boolean);
+    if (parts.length >= 2) {
+      const owner = parts[0];
+      const repo = parts[1];
+      if (parts[2] === 'issues' && parts[3]) return `${owner}/${repo} Issue #${parts[3]}`;
+      if (parts[2] === 'pull' && parts[3]) return `${owner}/${repo} PR #${parts[3]}`;
+      if (parts[2] === 'blob' || parts[2] === 'tree') return `${owner}/${repo} — ${parts.slice(4).join('/')}`;
+      if (titleIsUrl) return `${owner}/${repo}`;
+    }
+  }
+
+  // YouTube — if title is just a URL, at least say "YouTube Video"
+  if ((hostname === 'www.youtube.com' || hostname === 'youtube.com') && pathname === '/watch') {
+    if (titleIsUrl) return 'YouTube Video';
+  }
+
+  // Reddit — extract subreddit and post hint from URL
+  if ((hostname === 'www.reddit.com' || hostname === 'reddit.com' || hostname === 'old.reddit.com') && pathname.includes('/comments/')) {
+    const parts = pathname.split('/').filter(Boolean);
+    const subIdx = parts.indexOf('r');
+    if (subIdx !== -1 && parts[subIdx + 1]) {
+      const sub = parts[subIdx + 1];
+      if (titleIsUrl) return `r/${sub} post`;
+    }
+  }
+
+  return title || url;
+}
+
+
 const ICONS = {
   // Tab/browser icon — used in the "N tabs open" badge
   tabs: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8.25V18a2.25 2.25 0 0 0 2.25 2.25h13.5A2.25 2.25 0 0 0 21 18V8.25m-18 0V6a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 6v2.25m-18 0h18" /></svg>`,
@@ -464,15 +730,9 @@ const ICONS = {
 /* ----------------------------------------------------------------
    MISSION CARD RENDERERS
 
-   Two distinct renderers for the two sections:
-
-   1. renderOpenTabsMissionCard() — for "Right now" section.
-      Shows currently open tabs as chips. Has "Close all" button.
-      These missions come from /api/cluster-tabs (ephemeral, live).
-
-   2. renderHistoryMissionCard() — for "Pick back up" section.
-      Lighter/smaller treatment. Has "Reopen" link.
-      These missions come from /api/history-missions (from the DB).
+   renderOpenTabsMissionCard() — for "Right now" section.
+   Shows currently open tabs as chips. Has "Close all" button.
+   These missions come from /api/cluster-tabs (ephemeral, live).
    ---------------------------------------------------------------- */
 
 /**
@@ -501,25 +761,34 @@ function renderOpenTabsMissionCard(mission, missionIndex) {
   const missionHasDupes = tabs.some(t => dupeMap[t.url]);
 
   // Page chips — one per actual open tab (up to 5 shown, rest summarized)
-  const visibleTabs = tabs.slice(0, 5);
+  // Show up to 8 tabs (more room now that each is a full row)
+  const visibleTabs = tabs.slice(0, 8);
   const extraCount  = tabs.length - visibleTabs.length;
   const pageChips = visibleTabs.map(tab => {
-    const label   = tab.title || tab.url || '';
-    const display = label.length > 45 ? label.slice(0, 45) + '…' : label;
+    let tabHostname = '';
+    try { tabHostname = new URL(tab.url).hostname; } catch {}
+    const label   = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), tabHostname);
     const dupeCount = dupeMap[tab.url];
-    const dupeTag = dupeCount ? ` <span style="color:var(--accent-amber);font-weight:600">(${dupeCount}x)</span>` : '';
+    const dupeTag = dupeCount ? ` <span class="chip-dupe-badge">(${dupeCount}x)</span>` : '';
     const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
     const safeTitle = label.replace(/"/g, '&quot;');
-    return `<span class="page-chip clickable" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      <span class="chip-text">${display}${dupeTag}</span>
-      <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
-      </button>
-      <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-      </button>
-    </span>`;
-  }).join('') + (extraCount > 0 ? `<span class="page-chip"><span class="chip-text">+${extraCount} more</span></span>` : '');
+    // Extract domain for the favicon
+    let domain = '';
+    try { domain = new URL(tab.url).hostname; } catch {}
+    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+    return `<div class="page-chip clickable" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
+      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
+      <span class="chip-text">${label}${dupeTag}</span>
+      <div class="chip-actions">
+        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
+        </button>
+        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+    </div>`;
+  }).join('') + (extraCount > 0 ? `<div class="page-chip page-chip-overflow"><span class="chip-text">+${extraCount} more</span></div>` : '');
 
   // Use a stable ID based on mission name (not array index, which shifts when
   // earlier missions are closed). This way closing mission #2 doesn't break
@@ -566,54 +835,6 @@ function renderOpenTabsMissionCard(mission, missionIndex) {
       <div class="mission-meta">
         <div class="mission-page-count">${tabCount}</div>
         <div class="mission-page-label">tabs</div>
-      </div>
-    </div>`;
-}
-
-/**
- * renderHistoryMissionCard(mission)
- *
- * Builds the HTML for a single "Pick back up" history card.
- * Lighter visual treatment — smaller, no status bar color, just info + reopen.
- * The mission object comes from /api/history-missions and has the DB shape:
- *   { id, name, summary, status, last_activity, urls: [{ url, title }] }
- *
- * @param {Object} mission - Mission object from history-missions API
- * @returns {string}       - HTML string ready for innerHTML
- */
-function renderHistoryMissionCard(mission) {
-  const pageCount = (mission.urls || []).length;
-
-  // Status-based age tag (e.g. "2 days cold", "1 week cold")
-  const ageLabel = timeAgo(mission.last_activity)
-    .replace(' ago', '')
-    .replace('yesterday', '1 day')
-    .replace(' hrs', 'h')
-    .replace(' hr', 'h')
-    .replace(' min', 'm');
-
-  return `
-    <div class="mission-card history-card" data-mission-id="${mission.id}">
-      <div class="status-bar abandoned"></div>
-      <div class="mission-content">
-        <div class="mission-top">
-          <span class="mission-name">${mission.name || 'Unnamed Mission'}</span>
-          <span class="mission-tag abandoned">${ageLabel} ago</span>
-        </div>
-        <div class="mission-summary">${mission.summary || ''}</div>
-        <div class="actions">
-          <button class="action-btn primary" data-action="focus" data-mission-id="${mission.id}">
-            ${ICONS.focus}
-            Reopen
-          </button>
-          <button class="action-btn danger" data-action="dismiss" data-mission-id="${mission.id}">
-            Let it go
-          </button>
-        </div>
-      </div>
-      <div class="mission-meta">
-        <div class="mission-page-count">${pageCount}</div>
-        <div class="mission-page-label">pages</div>
       </div>
     </div>`;
 }
@@ -844,28 +1065,33 @@ function renderDomainCard(group, groupIndex) {
       uniqueTabs.push(tab);
     }
   }
-  const visibleTabs = uniqueTabs.slice(0, 5);
+  const visibleTabs = uniqueTabs.slice(0, 8);
   const extraCount  = uniqueTabs.length - visibleTabs.length;
   const pageChips = visibleTabs.map(tab => {
-    const label   = tab.title || tab.url || '';
-    const display = label.length > 45 ? label.slice(0, 45) + '…' : label;
+    const label   = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), group.domain);
     const count   = urlCounts[tab.url];
     const dupeTag = count > 1
-      ? ` <span style="color:var(--accent-amber);font-weight:600">(${count}x)</span>`
+      ? ` <span class="chip-dupe-badge">(${count}x)</span>`
       : '';
-    const chipStyle = count > 1 ? ' style="border-color: rgba(200, 113, 58, 0.3);"' : '';
+    const chipClass = count > 1 ? ' chip-has-dupes' : '';
     const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
     const safeTitle = label.replace(/"/g, '&quot;');
-    return `<span class="page-chip clickable"${chipStyle} data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      <span class="chip-text">${display}${dupeTag}</span>
-      <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
-      </button>
-      <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-      </button>
-    </span>`;
-  }).join('') + (extraCount > 0 ? `<span class="page-chip"><span class="chip-text">+${extraCount} more</span></span>` : '');
+    let domain = '';
+    try { domain = new URL(tab.url).hostname; } catch {}
+    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
+      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
+      <span class="chip-text">${label}${dupeTag}</span>
+      <div class="chip-actions">
+        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
+        </button>
+        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+    </div>`;
+  }).join('') + (extraCount > 0 ? `<div class="page-chip page-chip-overflow"><span class="chip-text">+${extraCount} more</span></div>` : '');
 
   // Use amber status bar if there are duplicates
   const statusBarClass = hasDupes ? 'active' : 'neutral';
@@ -895,7 +1121,7 @@ function renderDomainCard(group, groupIndex) {
       <div class="status-bar"${statusBarStyle}></div>
       <div class="mission-content">
         <div class="mission-top">
-          <span class="mission-name">${group.domain}</span>
+          <span class="mission-name">${friendlyDomain(group.domain)}</span>
           <span class="mission-tag neutral">Domain</span>
           ${tabBadge}
           ${dupeBadge}
@@ -1097,7 +1323,14 @@ async function renderStaticDashboard() {
   const groupMap = {};
   for (const tab of realTabs) {
     try {
-      const hostname = new URL(tab.url).hostname;
+      // file:// URLs have no hostname — group them under "Local Files"
+      let hostname;
+      if (tab.url && tab.url.startsWith('file://')) {
+        hostname = 'local-files';
+      } else {
+        hostname = new URL(tab.url).hostname;
+      }
+      if (!hostname) continue; // skip if still empty
       if (!groupMap[hostname]) {
         groupMap[hostname] = { domain: hostname, tabs: [] };
       }
@@ -1133,45 +1366,7 @@ async function renderStaticDashboard() {
     aiBar.style.display = realTabs.length > 0 ? 'block' : 'none';
   }
 
-  // ── Step 6: Fetch + render top sites ─────────────────────────────────────
-  try {
-    const statsRes = await fetch('/api/stats');
-    if (statsRes.ok) {
-      const stats = await statsRes.json();
-
-      // Render top sites section
-      const topSitesSection = document.getElementById('topSitesSection');
-      const topSitesGrid    = document.getElementById('topSitesGrid');
-      const lastRefreshEl   = document.getElementById('lastRefreshTime');
-
-      if (stats.topSites && stats.topSites.length > 0 && topSitesSection) {
-        topSitesGrid.innerHTML = stats.topSites.map(site => `
-          <a class="top-site-tile" href="${site.domain.startsWith('http') ? site.domain : 'https://' + site.domain}" target="_top">
-            <div class="top-site-icon">
-              <img src="https://www.google.com/s2/favicons?domain=${site.domain}&sz=32" alt="" loading="lazy" onerror="this.style.display='none'">
-            </div>
-            <div class="top-site-name">${site.domain.replace(/^www\./, '')}</div>
-            <div class="top-site-visits">${site.visitCount.toLocaleString()} visits</div>
-          </a>
-        `).join('');
-        topSitesSection.style.display = 'block';
-      } else if (topSitesSection) {
-        topSitesSection.style.display = 'none';
-      }
-
-      if (lastRefreshEl) {
-        lastRefreshEl.textContent = stats.lastAnalysis
-          ? `History last analyzed ${timeAgo(stats.lastAnalysis)}`
-          : 'History not yet analyzed';
-      }
-    }
-  } catch (err) {
-    console.warn('[TMC] Could not fetch stats:', err);
-  }
-
-  // ── Step 7: Footer stats (scatter bar removed) ───────────────────────────
-
-  // ── Step 8: Footer stats ─────────────────────────────────────────────────
+  // ── Step 6: Footer stats ─────────────────────────────────────────────────
   const statMissions = document.getElementById('statMissions');
   const statTabs     = document.getElementById('statTabs');
   const statStale    = document.getElementById('statStale');
@@ -1205,8 +1400,8 @@ async function renderStaticDashboard() {
  * 1. Show loading state on the button
  * 2. Call POST /api/cluster-tabs (or use cached missions)
  * 3. Replace domain cards with AI mission cards
- * 4. Hide "Most visited" and "Organize with AI" button
- * 5. Update scatter bar + footer stats
+ * 4. Hide "Organize with AI" button
+ * 5. Update footer stats
  */
 async function renderAIDashboard(options = {}) {
   isAIView = true;
@@ -1294,8 +1489,6 @@ async function renderAIDashboard(options = {}) {
 
   // ── Hide static-only UI elements ─────────────────────────────────────────
   if (aiBar) aiBar.style.display = 'none';
-  const topSitesSection = document.getElementById('topSitesSection');
-  if (topSitesSection) topSitesSection.style.display = 'none';
 
   // ── Stale tabs ─────────────────────────────────────────────────────────────
   const clusteredTabUrls = new Set(
@@ -1324,24 +1517,6 @@ async function renderAIDashboard(options = {}) {
   if (statTabs)     statTabs.textContent     = openTabs.length;
   if (statStale)    statStale.textContent    = staleTabs.length;
 
-  // Last refresh time
-  const lastRefreshEl = document.getElementById('lastRefreshTime');
-  if (lastRefreshEl) {
-    try {
-      const statsRes = await fetch('/api/stats');
-      if (statsRes.ok) {
-        const stats = await statsRes.json();
-        lastRefreshEl.textContent = stats.lastAnalysis
-          ? `History last analyzed ${timeAgo(stats.lastAnalysis)}`
-          : 'History not yet analyzed';
-      } else {
-        lastRefreshEl.textContent = 'History not yet analyzed';
-      }
-    } catch {
-      lastRefreshEl.textContent = 'History not yet analyzed';
-    }
-  }
-
   // Render the "Saved for Later" checklist column
   await renderDeferredColumn();
 }
@@ -1351,7 +1526,6 @@ async function renderAIDashboard(options = {}) {
  * renderDashboard()
  *
  * Legacy entry point — now just calls renderStaticDashboard().
- * Keeping this name so any existing references (e.g. handleRefresh) still work.
  */
 async function renderDashboard() {
   await renderStaticDashboard();
@@ -1385,13 +1559,6 @@ document.addEventListener('click', async (e) => {
   if (e.target.closest('#closeAllStaleBtn')) {
     e.preventDefault();
     await handleCloseAllStale();
-    return;
-  }
-
-  // --- Refresh button (in the footer) ---
-  if (e.target.closest('#refreshBtn')) {
-    e.preventDefault();
-    await handleRefresh();
     return;
   }
 
@@ -1555,7 +1722,7 @@ document.addEventListener('click', async (e) => {
     const idx = domainGroups.indexOf(group);
     if (idx !== -1) domainGroups.splice(idx, 1);
 
-    showToast(`Saved ${tabs.length} tab${tabs.length !== 1 ? 's' : ''} from ${group.domain}`);
+    showToast(`Saved ${tabs.length} tab${tabs.length !== 1 ? 's' : ''} from ${friendlyDomain(group.domain)}`);
     await renderDeferredColumn();
     return;
   }
@@ -1642,7 +1809,7 @@ document.addEventListener('click', async (e) => {
     const idx = domainGroups.indexOf(group);
     if (idx !== -1) domainGroups.splice(idx, 1);
 
-    showToast(`Closed ${urls.length} tab${urls.length !== 1 ? 's' : ''} from ${group.domain}`);
+    showToast(`Closed ${urls.length} tab${urls.length !== 1 ? 's' : ''} from ${friendlyDomain(group.domain)}`);
 
     // Update footer tab count
     const statTabs = document.getElementById('statTabs');
@@ -1717,34 +1884,6 @@ document.addEventListener('click', async (e) => {
     const idx = openTabMissions.indexOf(mission);
     if (idx !== -1) openTabMissions.splice(idx, 1);
 
-    await updateStaleCount();
-    showToast(`Closed tabs for "${mission.name}"`);
-  }
-
-  // ---- close-tabs: close all tabs belonging to a history mission ----
-  else if (action === 'close-tabs') {
-    const mission = await fetchMissionById(missionId);
-    if (!mission) return;
-
-    const urls = (mission.urls || []).map(u => u.url);
-    await closeTabsByUrls(urls);
-
-    // Remove the badge from the card (no tabs left open)
-    if (card) {
-      const badge = card.querySelector('.open-tabs-badge');
-      if (badge) {
-        badge.style.transition = 'opacity 0.3s, transform 0.3s';
-        badge.style.opacity = '0';
-        badge.style.transform = 'scale(0.8)';
-        setTimeout(() => badge.remove(), 300);
-      }
-      // Remove this specific close-tabs button
-      actionEl.style.transition = 'opacity 0.2s';
-      actionEl.style.opacity = '0';
-      setTimeout(() => actionEl.remove(), 200);
-    }
-
-    // Update footer stale count
     await updateStaleCount();
     showToast(`Closed tabs for "${mission.name}"`);
   }
@@ -1860,13 +1999,14 @@ document.addEventListener('input', async (e) => {
   if (!archiveList) return;
 
   if (q.length < 2) {
-    // Show all archived items (re-fetch from the already-loaded data)
-    await renderDeferredColumn();
-    // Re-open the archive after re-render
-    const toggle = document.getElementById('archiveToggle');
-    const body = document.getElementById('archiveBody');
-    if (toggle) toggle.classList.add('open');
-    if (body) body.style.display = 'block';
+    // Reset archive list to show all archived items without re-rendering the whole column
+    try {
+      const res = await fetch('/api/deferred');
+      if (res.ok) {
+        const data = await res.json();
+        archiveList.innerHTML = (data.archived || []).map(item => renderArchiveItem(item)).join('');
+      }
+    } catch {}
     return;
   }
 
@@ -1927,35 +2067,6 @@ async function handleCloseAllStale() {
   if (statTabs)  statTabs.textContent  = openTabs.length;
 
   showToast('Closed all stale tabs. Breathing room restored.');
-}
-
-/**
- * handleRefresh()
- *
- * Triggers a fresh AI analysis of the browser history,
- * then re-renders the dashboard with the new data.
- */
-async function handleRefresh() {
-  const refreshBtn = document.getElementById('refreshBtn');
-  if (refreshBtn) {
-    refreshBtn.textContent = 'Refreshing…';
-    refreshBtn.style.opacity = '0.5';
-  }
-
-  try {
-    // Ask the server to re-read history + re-cluster missions
-    await fetch('/api/missions/refresh', { method: 'POST' });
-  } catch (err) {
-    console.warn('[TMC] Refresh failed:', err);
-  }
-
-  // Re-render the full dashboard
-  await renderDashboard();
-
-  if (refreshBtn) {
-    refreshBtn.textContent = 'Refresh now';
-    refreshBtn.style.opacity = '1';
-  }
 }
 
 /**
