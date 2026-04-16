@@ -17,6 +17,223 @@
 
 
 /* ----------------------------------------------------------------
+   THEME — dark / light / system
+   ---------------------------------------------------------------- */
+
+const systemDarkMQ = window.matchMedia('(prefers-color-scheme: dark)');
+
+/**
+ * Renders a canvas star field behind the dashboard content.
+ * Only active in dark mode — removed automatically when switching to light.
+ * Avoids the upper-right planet area so stars don't compete with the gradient.
+ */
+function renderStarField() {
+  const existing = document.getElementById('starField');
+  if (document.documentElement.getAttribute('data-theme') !== 'dark') {
+    existing?.remove();
+    return;
+  }
+
+  const canvas = existing || document.createElement('canvas');
+  if (!existing) {
+    canvas.id = 'starField';
+    canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+    document.body.insertBefore(canvas, document.body.firstChild);
+  }
+
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Planet occupies the upper-right quadrant — avoid placing stars there
+  const pX = canvas.width  * 0.70;
+  const pY = canvas.height * 0.44;
+  const inPlanet = (x, y) => x > pX && y < pY;
+
+  // Three density layers: dim background, medium, bright foreground
+  const layers = [
+    { count: 140, maxR: 0.65, minO: 0.08, maxO: 0.40 },
+    { count: 65,  maxR: 1.05, minO: 0.28, maxO: 0.68 },
+    { count: 20,  maxR: 1.55, minO: 0.50, maxO: 0.90 },
+  ];
+
+  for (const { count, maxR, minO, maxO } of layers) {
+    for (let i = 0; i < count; i++) {
+      let x, y, tries = 0;
+      do {
+        x = Math.random() * canvas.width;
+        y = Math.random() * canvas.height;
+      } while (inPlanet(x, y) && ++tries < 8);
+
+      const r = 0.25 + Math.random() * maxR;
+      const o = minO + Math.random() * (maxO - minO);
+      // Occasional slightly blue/warm tint for star colour variation
+      const g = Math.random() > 0.75 ? 248 : 244;
+      const b = Math.random() > 0.80 ? 255 : 242;
+
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(252,${g},${b},${o.toFixed(2)})`;
+      ctx.fill();
+    }
+  }
+
+  // A handful of bright stars with radial glow (not in planet zone)
+  for (let i = 0; i < 6; i++) {
+    let x, y;
+    do {
+      x = Math.random() * canvas.width  * 0.73;
+      y = Math.random() * canvas.height;
+    } while (inPlanet(x, y));
+
+    const o = 0.50 + Math.random() * 0.38;
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, 5);
+    glow.addColorStop(0, `rgba(255,252,248,${o.toFixed(2)})`);
+    glow.addColorStop(1, 'rgba(255,252,248,0)');
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,252,248,${o.toFixed(2)})`;
+    ctx.fill();
+  }
+}
+
+/**
+ * Paints wispy clouds on a fixed canvas for light mode.
+ * Removed automatically when switching to dark mode.
+ */
+function renderCloudLayer() {
+  const existing = document.getElementById('cloudLayer');
+  if (document.documentElement.getAttribute('data-theme') !== 'light') {
+    existing?.remove();
+    return;
+  }
+
+  const canvas = existing || document.createElement('canvas');
+  if (!existing) {
+    canvas.id = 'cloudLayer';
+    canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+    document.body.insertBefore(canvas, document.body.firstChild);
+  }
+
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Cloud definitions: [cx%, cy%, width%, height%, opacity]
+  // Spread mostly across the top 40 % of the sky
+  const clouds = [
+    [0.14, 0.04, 0.22, 0.058, 0.42],
+    [0.68, 0.08, 0.18, 0.048, 0.36],
+    [0.44, 0.17, 0.15, 0.040, 0.28],
+    [0.88, 0.03, 0.10, 0.036, 0.30],
+    [0.04, 0.23, 0.13, 0.038, 0.22],
+    [0.56, 0.30, 0.09, 0.030, 0.18],
+    [0.28, 0.34, 0.16, 0.042, 0.16],
+  ];
+
+  for (const [cx, cy, cw, ch, baseO] of clouds) {
+    const x = cx * canvas.width;
+    const y = cy * canvas.height;
+    const w = cw * canvas.width;
+    const h = ch * canvas.height;
+
+    // Each cloud = overlapping puffs at slight offsets
+    const puffs = [
+      [0,         0,          h],
+      [ w * 0.30, -h * 0.22,  h * 0.80],
+      [-w * 0.28, -h * 0.18,  h * 0.75],
+      [ w * 0.58,  h * 0.05,  h * 0.65],
+      [-w * 0.55,  h * 0.05,  h * 0.60],
+    ];
+
+    for (const [dx, dy, r] of puffs) {
+      const px = x + dx;
+      const py = y + dy;
+      const grad = ctx.createRadialGradient(px, py, 0, px, py, r);
+      grad.addColorStop(0,   `rgba(255,255,255,${baseO.toFixed(2)})`);
+      grad.addColorStop(0.55, `rgba(255,255,255,${(baseO * 0.40).toFixed(2)})`);
+      grad.addColorStop(1,   'rgba(255,255,255,0)');
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+  }
+
+  // Soft horizon shimmer — ocean light reflection at the very bottom
+  const shimmerGrad = ctx.createLinearGradient(0, canvas.height * 0.88, 0, canvas.height);
+  shimmerGrad.addColorStop(0, 'rgba(180, 225, 248, 0)');
+  shimmerGrad.addColorStop(1, 'rgba(140, 210, 245, 0.18)');
+  ctx.fillStyle = shimmerGrad;
+  ctx.fillRect(0, canvas.height * 0.88, canvas.width, canvas.height * 0.12);
+}
+
+// Re-render background layers on resize (debounced)
+let _starResizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(_starResizeTimer);
+  _starResizeTimer = setTimeout(() => { renderStarField(); renderCloudLayer(); }, 160);
+});
+
+/**
+ * Resolves the preference ("light", "dark", or "system") to the actual
+ * theme and applies it by setting data-theme on <html>.
+ * Also marks the active button in the toggle.
+ */
+function applyTheme(preference) {
+  const isDark = preference === 'dark' ||
+    (preference === 'system' && systemDarkMQ.matches);
+  document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.themePref === preference);
+  });
+
+  renderStarField();
+  renderCloudLayer();
+}
+
+/**
+ * Reads the saved preference from chrome.storage.local, syncs to
+ * localStorage (for the no-FOUC inline script), and applies it.
+ */
+async function initTheme() {
+  const { themePref = 'system' } = await chrome.storage.local.get('themePref');
+  localStorage.setItem('tabout-theme', themePref);
+  applyTheme(themePref);
+}
+
+/**
+ * Saves a new preference and applies it immediately.
+ */
+async function setTheme(preference) {
+  await chrome.storage.local.set({ themePref: preference });
+  localStorage.setItem('tabout-theme', preference);
+  applyTheme(preference);
+}
+
+// Re-apply when the OS theme changes (only relevant in "system" mode)
+systemDarkMQ.addEventListener('change', async () => {
+  const { themePref = 'system' } = await chrome.storage.local.get('themePref');
+  if (themePref === 'system') applyTheme('system');
+});
+
+// Theme toggle click handler
+document.getElementById('themeToggle').addEventListener('click', (e) => {
+  const btn = e.target.closest('.theme-btn');
+  if (!btn) return;
+  setTheme(btn.dataset.themePref);
+});
+
+
+/* ----------------------------------------------------------------
    CHROME TABS — Direct API Access
 
    Since this page IS the extension's new tab page, it has full
@@ -115,8 +332,19 @@ async function closeTabsExact(urls) {
  * Switches Chrome to the tab with the given URL (exact match first,
  * then hostname fallback). Also brings the window to the front.
  */
-async function focusTab(url) {
+async function focusTab(url, tabId) {
+  // Try direct ID lookup first — survives URL changes (redirects, hash, etc.)
+  if (tabId) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      await chrome.tabs.update(tab.id, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
+      return;
+    } catch { /* tab was closed since last render, fall through to URL search */ }
+  }
+
   if (!url) return;
+
   const allTabs = await chrome.tabs.query({});
   const currentWindow = await chrome.windows.getCurrent();
 
@@ -136,8 +364,8 @@ async function focusTab(url) {
 
   if (matches.length === 0) return;
 
-  // Prefer a match in a different window so it actually switches windows
-  const match = matches.find(t => t.windowId !== currentWindow.id) || matches[0];
+  // Prefer a match in the current window (same window as the extension page)
+  const match = matches.find(t => t.windowId === currentWindow.id) || matches[0];
   await chrome.tabs.update(match.id, { active: true });
   await chrome.windows.update(match.windowId, { focused: true });
 }
@@ -768,14 +996,14 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
     let domain = '';
     try { domain = new URL(tab.url).hostname; } catch {}
     const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
-    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
+    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" data-tab-id="${tab.id}" title="${safeTitle}">
       ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
       <span class="chip-text">${label}</span>${dupeTag}
       <div class="chip-actions">
-        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
+        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-id="${tab.id}" data-tab-title="${safeTitle}" title="Save for later">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
-        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
+        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" data-tab-id="${tab.id}" title="Close this tab">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
@@ -849,14 +1077,14 @@ function renderDomainCard(group) {
     let domain = '';
     try { domain = new URL(tab.url).hostname; } catch {}
     const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
-    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
+    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" data-tab-id="${tab.id}" title="${safeTitle}">
       ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
       <span class="chip-text">${label}</span>${dupeTag}
       <div class="chip-actions">
-        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
+        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-id="${tab.id}" data-tab-title="${safeTitle}" title="Save for later">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
-        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
+        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" data-tab-id="${tab.id}" title="Close this tab">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
@@ -1217,7 +1445,8 @@ document.addEventListener('click', async (e) => {
   // ---- Focus a specific tab ----
   if (action === 'focus-tab') {
     const tabUrl = actionEl.dataset.tabUrl;
-    if (tabUrl) await focusTab(tabUrl);
+    const tabId  = actionEl.dataset.tabId ? Number(actionEl.dataset.tabId) : null;
+    await focusTab(tabUrl, tabId);
     return;
   }
 
@@ -1225,11 +1454,18 @@ document.addEventListener('click', async (e) => {
   if (action === 'close-single-tab') {
     e.stopPropagation(); // don't trigger parent chip's focus-tab
     const tabUrl = actionEl.dataset.tabUrl;
-    if (!tabUrl) return;
+    const tabId  = actionEl.dataset.tabId ? Number(actionEl.dataset.tabId) : null;
+    if (!tabUrl && !tabId) return;
 
-    // Close the tab in Chrome directly
-    const allTabs = await chrome.tabs.query({});
-    const match   = allTabs.find(t => t.url === tabUrl);
+    // Prefer ID lookup; fall back to URL match
+    let match;
+    if (tabId) {
+      try { match = await chrome.tabs.get(tabId); } catch { /* already closed */ }
+    }
+    if (!match && tabUrl) {
+      const allTabs = await chrome.tabs.query({});
+      match = allTabs.find(t => t.url === tabUrl);
+    }
     if (match) await chrome.tabs.remove(match.id);
     await fetchOpenTabs();
 
@@ -1269,6 +1505,7 @@ document.addEventListener('click', async (e) => {
     e.stopPropagation();
     const tabUrl   = actionEl.dataset.tabUrl;
     const tabTitle = actionEl.dataset.tabTitle || tabUrl;
+    const tabId    = actionEl.dataset.tabId ? Number(actionEl.dataset.tabId) : null;
     if (!tabUrl) return;
 
     // Save to chrome.storage.local
@@ -1280,9 +1517,15 @@ document.addEventListener('click', async (e) => {
       return;
     }
 
-    // Close the tab in Chrome
-    const allTabs = await chrome.tabs.query({});
-    const match   = allTabs.find(t => t.url === tabUrl);
+    // Close the tab — prefer ID lookup, fall back to URL match
+    let match;
+    if (tabId) {
+      try { match = await chrome.tabs.get(tabId); } catch { /* already closed */ }
+    }
+    if (!match) {
+      const allTabs = await chrome.tabs.query({});
+      match = allTabs.find(t => t.url === tabUrl);
+    }
     if (match) await chrome.tabs.remove(match.id);
     await fetchOpenTabs();
 
@@ -1479,4 +1722,5 @@ document.addEventListener('input', async (e) => {
 /* ----------------------------------------------------------------
    INITIALIZE
    ---------------------------------------------------------------- */
+initTheme();
 renderDashboard();

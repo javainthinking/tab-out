@@ -5,37 +5,105 @@
    ============================================================ */
 
 :root {
-  --ink: #1a1613;
-  --paper: #f8f5f0;
-  --warm-gray: #e8e2da;
-  --muted: #9a918a;
-  --accent-amber: #c8713a;
-  --accent-sage: #5a7a62;
-  --accent-slate: #5a6b7a;
-  --accent-rose: #b35a5a;
-  --status-active: #3d7a4a;
-  --status-cooling: #b8892e;
-  --status-abandoned: #b35a5a;
-  --card-bg: #fffdf9;
-  --shadow: rgba(26, 22, 19, 0.06);
+  --ink: #0c1828;
+  --paper: #e0f2fb;
+  --warm-gray: #b8d8ec;
+  --muted: #4e6e82;
+  --accent-amber: #0369a1;
+  --accent-sage: #0891b2;
+  --accent-slate: #2e7ea8;
+  --accent-rose: #dc2626;
+  --status-active: #0891b2;
+  --status-cooling: #d97706;
+  --status-abandoned: #dc2626;
+  --card-bg: #ffffff;
+  --shadow: rgba(3, 60, 130, 0.10);
+}
+
+[data-theme="dark"] {
+  --ink: #f0f1f5;
+  --paper: #000000;
+  --warm-gray: #1c1c24;
+  --muted: #55556e;
+  --accent-amber: #3b82f6;
+  --accent-sage: #10b981;
+  --accent-slate: #64748b;
+  --accent-rose: #ef4444;
+  --status-active: #10b981;
+  --status-cooling: #f59e0b;
+  --status-abandoned: #ef4444;
+  --card-bg: #101018;
+  --shadow: rgba(0, 0, 0, 0.55);
+}
+
+/* ================================================================
+   DARK MODE — SpaceX-style space background
+   Mars planet bleeding in from upper-right, CSS-only
+   ================================================================ */
+
+[data-theme="dark"] body {
+  background:
+    /* Terrain highlights on the lit surface */
+    radial-gradient(circle at 78% 3%, rgba(185, 95, 45, 0.45) 0%, transparent 14%),
+    /* Main planet body — center is above/right of viewport */
+    radial-gradient(circle at 92% -10%,
+      #c06030 0%,
+      #904020 10%,
+      #602010 22%,
+      #301008 32%,
+      #100402 42%,
+      transparent 54%
+    ),
+    /* Atmospheric limb glow */
+    radial-gradient(ellipse at 97% -6%, rgba(230, 130, 65, 0.28) 0%, transparent 28%),
+    radial-gradient(ellipse at 94% -9%, rgba(170, 75, 35, 0.14) 0%, transparent 46%),
+    /* Pure black space */
+    #000000;
+}
+
+[data-theme="dark"] body::before {
+  background-image: none; /* remove noise texture; star field handled by canvas */
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* ================================================================
+   LIGHT MODE — Sky & Ocean background
+   Sun warmth top-left · blue sky zenith · ocean depth bottom
+   ================================================================ */
+
 body {
-  font-family: 'DM Sans', sans-serif;
-  background: var(--paper);
+  font-family: 'Inter', sans-serif;
+  background:
+    /* Sun warmth — upper-left */
+    radial-gradient(ellipse at 8% 4%, rgba(255, 228, 100, 0.32) 0%, transparent 30%),
+    /* Cloud wisps — CSS layer (canvas adds more) */
+    radial-gradient(ellipse at 76% 9%,  rgba(255, 255, 255, 0.50) 0%, transparent 20%),
+    radial-gradient(ellipse at 28% 20%, rgba(255, 255, 255, 0.38) 0%, transparent 16%),
+    /* Ocean depth — bottom horizon */
+    radial-gradient(ellipse at 52% 110%, rgba(3, 80, 180, 0.22) 0%, transparent 46%),
+    radial-gradient(ellipse at 18% 102%, rgba(2, 100, 180, 0.12) 0%, transparent 38%),
+    /* Sky gradient — zenith to horizon */
+    linear-gradient(180deg,
+      #44aace 0%,
+      #70c4e6 12%,
+      #9ed6f2 28%,
+      #c4eaf8 48%,
+      #dcf2fb 65%,
+      #edf8fc 78%,
+      #f0f8f4 100%
+    );
   color: var(--ink);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Subtle paper texture */
+/* Both modes handled by canvas (stars / clouds) — no CSS noise texture needed */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  background-image: none;
   pointer-events: none;
   z-index: 0;
 }
@@ -46,6 +114,80 @@ body::before {
   max-width: 960px;
   margin: 0 auto;
   padding: 48px 32px 80px;
+}
+
+/* ================================================================
+   LIGHT MODE — Glass / frost effects over sky background
+   ================================================================ */
+
+[data-theme="light"] .mission-card {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-color: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 2px 12px rgba(3, 60, 130, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+[data-theme="light"] header {
+  border-bottom-color: rgba(3, 80, 160, 0.12);
+}
+
+[data-theme="light"] footer {
+  border-top-color: rgba(3, 80, 160, 0.12);
+}
+
+[data-theme="light"] .section-line {
+  background: rgba(3, 80, 160, 0.12);
+}
+
+[data-theme="light"] .archive-search {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-color: rgba(3, 80, 160, 0.18);
+}
+
+[data-theme="light"] .tab-cleanup-banner {
+  background: rgba(255, 255, 255, 0.60);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+[data-theme="light"] .update-banner {
+  background: rgba(255, 255, 255, 0.60);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+[data-theme="light"] .deferred-column {
+  background: rgba(255, 255, 255, 0.30);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 6px;
+  padding: 0 12px;
+}
+
+/* ================================================================
+   DARK MODE — glass cards over planet/star background
+   ================================================================ */
+
+[data-theme="dark"] .mission-card {
+  background: rgba(16, 16, 24, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] header {
+  border-bottom-color: rgba(255, 255, 255, 0.07);
+}
+
+[data-theme="dark"] footer {
+  border-top-color: rgba(255, 255, 255, 0.07);
+}
+
+[data-theme="dark"] .section-line {
+  background: rgba(255, 255, 255, 0.07);
 }
 
 /* When the saved-for-later sidebar is open, expand the container
@@ -65,27 +207,71 @@ header {
 }
 
 .header-left h1 {
-  font-family: 'Newsreader', serif;
+  font-family: 'Space Grotesk', sans-serif;
   font-weight: 300;
-  font-size: 28px;
-  letter-spacing: -0.5px;
+  font-size: 26px;
+  letter-spacing: -1px;
   color: var(--ink);
   margin-bottom: 4px;
 }
 
 .header-left .date {
-  font-size: 13px;
+  font-size: 11px;
   color: var(--muted);
-  font-weight: 400;
-  letter-spacing: 0.5px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  background: var(--warm-gray);
+  border-radius: 5px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.theme-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.theme-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.theme-btn:hover {
+  color: var(--ink);
+}
+
+.theme-btn.active {
+  background: var(--card-bg);
+  color: var(--accent-amber);
+  box-shadow: 0 1px 4px var(--shadow);
 }
 
 /* ---- Tab cleanup banner ---- */
 .tab-cleanup-banner {
-  background: linear-gradient(135deg, rgba(200, 113, 58, 0.04), rgba(200, 113, 58, 0.09));
-  border: 1px solid rgba(200, 113, 58, 0.18);
-  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(3, 105, 161, 0.04), rgba(3, 105, 161, 0.09));
+  border: 1px solid rgba(3, 105, 161, 0.18);
+  border-radius: 4px;
   padding: 16px 24px;
   display: flex;
   align-items: center;
@@ -100,10 +286,10 @@ header {
 }
 
 .tab-cleanup-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(200, 113, 58, 0.1);
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: rgba(3, 105, 161, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -127,11 +313,13 @@ header {
 }
 
 .tab-cleanup-btn {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
   font-weight: 600;
-  padding: 8px 20px;
-  border-radius: 6px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 7px 18px;
+  border-radius: 3px;
   border: none;
   background: var(--accent-amber);
   color: white;
@@ -147,9 +335,9 @@ header {
 
 /* ---- Nudge banner ---- */
 .nudge-banner {
-  background: linear-gradient(135deg, rgba(179, 90, 90, 0.04), rgba(179, 90, 90, 0.08));
-  border: 1px solid rgba(179, 90, 90, 0.15);
-  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(220, 38, 38, 0.04), rgba(220, 38, 38, 0.08));
+  border: 1px solid rgba(220, 38, 38, 0.15);
+  border-radius: 4px;
   padding: 16px 24px;
   display: flex;
   align-items: center;
@@ -158,10 +346,10 @@ header {
 }
 
 .nudge-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(179, 90, 90, 0.1);
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: rgba(220, 38, 38, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -194,12 +382,14 @@ header {
 }
 
 .section-header h2 {
-  font-family: 'Newsreader', serif;
-  font-weight: 400;
-  font-size: 18px;
-  font-style: italic;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 10px;
+  font-style: normal;
   color: var(--muted);
   white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
 }
 
 .section-line {
@@ -226,7 +416,7 @@ header {
 .mission-card {
   background: var(--card-bg);
   border: 1px solid var(--warm-gray);
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
@@ -295,33 +485,33 @@ header {
 
 .mission-name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--ink);
-  letter-spacing: -0.2px;
+  letter-spacing: -0.3px;
 }
 
 .mission-tag {
-  font-size: 10px;
+  font-size: 9px;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 3px;
+  padding: 2px 7px;
+  border-radius: 2px;
 }
 
 .mission-tag.active {
   color: var(--status-active);
-  background: rgba(61, 122, 74, 0.08);
+  background: rgba(8, 145, 178, 0.08);
 }
 
 .mission-tag.cooling {
   color: var(--status-cooling);
-  background: rgba(184, 137, 46, 0.08);
+  background: rgba(217, 119, 6, 0.08);
 }
 
 .mission-tag.abandoned {
   color: var(--status-abandoned);
-  background: rgba(179, 90, 90, 0.08);
+  background: rgba(220, 38, 38, 0.08);
 }
 
 /* Tab indicator badge — shows how many Chrome tabs are still open for this mission */
@@ -329,12 +519,13 @@ header {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
-  font-weight: 500;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
   color: var(--accent-amber);
-  background: rgba(200, 113, 58, 0.08);
-  padding: 2px 8px;
-  border-radius: 3px;
+  background: rgba(3, 105, 161, 0.08);
+  padding: 2px 7px;
+  border-radius: 2px;
 }
 
 .open-tabs-badge svg {
@@ -403,7 +594,7 @@ header {
 
 /* Duplicate border highlight */
 .chip-has-dupes {
-  border-color: rgba(200, 113, 58, 0.25);
+  border-color: rgba(3, 105, 161, 0.25);
 }
 
 /* Action buttons grouped on the right */
@@ -438,17 +629,17 @@ header {
 
 .chip-action:hover {
   opacity: 1;
-  background: rgba(154, 145, 138, 0.1);
+  background: rgba(107, 107, 128, 0.1);
 }
 
 .chip-save:hover {
   color: var(--accent-sage);
-  background: rgba(90, 122, 98, 0.08);
+  background: rgba(8, 145, 178, 0.08);
 }
 
 .chip-close:hover {
   color: var(--status-abandoned);
-  background: rgba(179, 90, 90, 0.08);
+  background: rgba(220, 38, 38, 0.08);
 }
 
 .page-chip.clickable {
@@ -457,7 +648,7 @@ header {
 }
 
 .page-chip.clickable:hover {
-  background: rgba(200, 113, 58, 0.04);
+  background: rgba(3, 105, 161, 0.04);
 }
 
 /* "+N more" overflow chip */
@@ -477,7 +668,7 @@ header {
 
 .mission-page-count {
   font-size: 20px;
-  font-family: 'Newsreader', serif;
+  font-family: 'Space Grotesk', sans-serif;
   font-weight: 300;
   color: var(--ink);
   line-height: 1;
@@ -498,11 +689,13 @@ header {
 }
 
 .action-btn {
-  font-size: 11px;
-  font-family: 'DM Sans', sans-serif;
-  font-weight: 500;
-  padding: 5px 14px;
-  border-radius: 4px;
+  font-size: 10px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-radius: 3px;
   border: 1px solid var(--warm-gray);
   background: var(--card-bg);
   color: var(--muted);
@@ -534,24 +727,24 @@ header {
 }
 
 .action-btn.close-tabs {
-  border-color: rgba(200, 113, 58, 0.3);
+  border-color: rgba(3, 105, 161, 0.3);
   color: var(--accent-amber);
-  background: rgba(200, 113, 58, 0.04);
+  background: rgba(3, 105, 161, 0.04);
 }
 
 .action-btn.close-tabs:hover {
-  background: rgba(200, 113, 58, 0.1);
+  background: rgba(3, 105, 161, 0.1);
   border-color: var(--accent-amber);
 }
 
 .action-btn.save-tabs {
-  border-color: rgba(90, 122, 98, 0.3);
+  border-color: rgba(8, 145, 178, 0.3);
   color: var(--accent-sage);
-  background: rgba(90, 122, 98, 0.04);
+  background: rgba(8, 145, 178, 0.04);
 }
 
 .action-btn.save-tabs:hover {
-  background: rgba(90, 122, 98, 0.1);
+  background: rgba(8, 145, 178, 0.1);
   border-color: var(--accent-sage);
 }
 
@@ -572,11 +765,12 @@ header {
   transform: translateX(-50%) translateY(80px);
   background: var(--ink);
   color: var(--paper);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
   font-weight: 500;
-  padding: 12px 24px;
-  border-radius: 8px;
+  letter-spacing: 0.3px;
+  padding: 11px 22px;
+  border-radius: 4px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.2);
   z-index: 100;
   opacity: 0;
@@ -618,20 +812,23 @@ footer {
 }
 
 .stat-num {
-  font-family: 'Newsreader', serif;
+  font-family: 'Space Grotesk', sans-serif;
   font-size: 28px;
   font-weight: 300;
   color: var(--ink);
   line-height: 1;
   transition: all 0.3s;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
 }
 
 .stat-label {
-  font-size: 10px;
+  font-size: 9px;
   text-transform: uppercase;
-  letter-spacing: 1.5px;
+  letter-spacing: 2px;
   color: var(--muted);
   margin-top: 4px;
+  font-weight: 500;
 }
 
 .last-refresh {
@@ -640,7 +837,7 @@ footer {
 }
 
 .refresh-btn {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 11px;
   font-weight: 500;
   color: var(--accent-amber);
@@ -718,15 +915,15 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 
 /* CSS-drawn checkmark in a glowing circle */
 .empty-checkmark {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: rgba(90, 122, 98, 0.1);
-  border: 1.5px solid rgba(90, 122, 98, 0.3);
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  background: rgba(8, 145, 178, 0.1);
+  border: 1.5px solid rgba(8, 145, 178, 0.3);
 
   /* Soft sage glow */
-  box-shadow: 0 0 0 8px rgba(90, 122, 98, 0.05),
-              0 0 0 16px rgba(90, 122, 98, 0.03);
+  box-shadow: 0 0 0 8px rgba(8, 145, 178, 0.05),
+              0 0 0 16px rgba(8, 145, 178, 0.03);
 
   display: flex;
   align-items: center;
@@ -749,12 +946,12 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .empty-title {
-  font-family: 'Newsreader', serif;
-  font-size: 20px;
-  font-weight: 400;
-  font-style: italic;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 18px;
+  font-weight: 300;
+  font-style: normal;
   color: var(--ink);
-  letter-spacing: -0.3px;
+  letter-spacing: -0.5px;
 }
 
 .empty-subtitle {
@@ -781,9 +978,9 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   gap: 12px;
 
   /* Sage green tint — matches accent-sage but very light */
-  background: linear-gradient(135deg, rgba(90, 122, 98, 0.05), rgba(90, 122, 98, 0.10));
-  border: 1px solid rgba(90, 122, 98, 0.22);
-  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(8, 145, 178, 0.05), rgba(8, 145, 178, 0.10));
+  border: 1px solid rgba(8, 145, 178, 0.22);
+  border-radius: 4px;
   padding: 10px 16px;
 
   /* Push the header down slightly */
@@ -833,13 +1030,15 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 
 /* "Update now" button — small, filled, sage green */
 .update-banner-btn {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
-  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
   color: #fff;
   background: var(--accent-sage);
   border: none;
-  border-radius: 5px;
+  border-radius: 3px;
   padding: 5px 12px;
   cursor: pointer;
   letter-spacing: 0.2px;
@@ -848,7 +1047,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .update-banner-btn:hover {
-  background: #4a6952; /* slightly darker sage */
+  background: #047857; /* slightly darker sage */
 }
 
 .update-banner-btn:disabled {
@@ -874,7 +1073,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .update-banner-dismiss:hover {
-  background: rgba(26, 22, 19, 0.06);
+  background: rgba(12, 12, 20, 0.06);
   color: var(--ink);
 }
 
@@ -1059,7 +1258,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .archive-toggle {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 12px;
   font-weight: 500;
   color: var(--muted);
@@ -1100,12 +1299,12 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .archive-search {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 12px;
   width: 100%;
   padding: 8px 12px;
   border: 1px solid var(--warm-gray);
-  border-radius: 6px;
+  border-radius: 3px;
   background: var(--card-bg);
   color: var(--ink);
   outline: none;
